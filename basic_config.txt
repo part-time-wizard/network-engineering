@@ -1,0 +1,78 @@
+# Cisco IOS XE Switch Baselining Commands
+
+# Guidance: run these commands (in exec mode) and capture full output to create a baseline.
+# Save outputs to files named with device hostname and timestamp (e.g., sw1-20260108-show-running.txt).
+
+### 1) Device & Software
+show version
+show inventory
+show platform
+
+### 2) System Uptime & Clock
+show clock
+show process cpu history
+show processes cpu
+
+### 3) Boot and Configuration
+show running-config
+show startup-config
+show boot
+
+### 4) Hardware & Memory
+show platform hardware qfp active infrastructure qpp all
+show memory statistics
+show platform resources
+
+### 5) Interfaces
+show ip interface brief
+show interfaces status
+show interfaces description
+show interfaces counters
+show interfaces switchport
+show interface <interface> (for detailed per-interface troubleshooting)
+
+### 6) VLANs & Layer 2
+show vlan brief
+show vlan id <vlan-id>
+show mac address-table
+show spanning-tree vlan <vlan-id>
+show spanning-tree summary
+
+### 7) Layer 3 / Routing
+show ip route
+show ip cef
+show ip bgp summary (if BGP configured)
+show ip ospf neighbor (if OSPF configured)
+
+### 8) Security & Access
+show run | section line vty
+show run | include aaa
+show tacacs-server config
+show ip access-lists
+show port-security
+
+### 9) Logging & Events
+show logging
+show logging last 50
+show tech-support (comprehensive; may be large)
+
+### 10) Quality and Counters
+show controllers counters
+show platform hardware throughput level
+
+### 11) Filesystem
+dir
+show file systems
+
+### 12) Save & Archive
+copy running-config startup-config
+copy running-config tftp
+copy running-config scp
+
+### Notes
+- For commands that produce long output, use terminal length 0 before running (`terminal length 0`).
+- Run `show tech-support` only when you can store/transfer the large output securely.
+- Replace angle-bracket tokens like `<interface>` and `<vlan-id>` with actual values.
+
+# End of baselining commands
+
