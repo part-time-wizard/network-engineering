@@ -1,0 +1,322 @@
+! Cisco IOS XE - Hardened switch configuration templates
+! IMPORTANT: Replace all <> placeholders with your environment values
+
+! -------------------------------
+! 0) Administrative & general hardening
+configure terminal
+hostname <SWITCH_HOSTNAME>
+no ip domain-lookup
+ip domain-name <example.com>
+service password-encryption
+security passwords min-length 12
+
+banner motd ^C
+Unauthorized access to this device is prohibited.
+^C
+
+! Set timezone
+clock timezone <TZ> <offset>
+
+! -------------------------------
+! 1) AAA / Admin access
+aaa new-model
+aaa authentication login default group tacacs+ local
+aaa authorization exec default group tacacs+ local
+aaa accounting exec default start-stop group tacacs+
+
+! TACACS server (example - replace with your server details)
+tacacs server TACACS1
+ address ipv4 <tacacs_server_ip> single-connection
+ key <tacacs_key>
+
+! Local fallback admin account
+username <admin> privilege 15 secret <admin_password>
+
+! Block repeated login attempts
+login block-for 120 attempts 3 within 60
+
+! -------------------------------
+! 2) Secure management plane (SSH only)
+crypto key generate rsa modulus 2048
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 2
+
+line vty 0 4
+ login local
+ transport input ssh
+ exec-timeout 10 0
+ logging synchronous
+
+! Limit management to specific hosts (management ACL example)
+ip access-list standard MGMT_ONLY
+ permit <management_subnet_or_host>
+ deny any
+
+line vty 0 4
+ access-class MGMT_ONLY in
+
+! -------------------------------
+! 3) SNMP (use v3 only)
+no snmp-server community public
+no snmp-server community private
+snmp-server group NETOPS v3 priv
+snmp-server user <snmp_user> NETOPS v3 auth sha <auth_pass> priv aes 128 <priv_pass>
+
+! -------------------------------
+! 4) Disable unused/unnecessary services
+no ip http server
+no ip http secure-server
+no service finger
+no ip finger
+no cdp run
+
+! -------------------------------
+! 5) Logging, monitoring, NTP
+logging buffered 64000 debugging
+logging trap informational
+logging host <syslog_server_ip>
+ntp server <ntp_server_ip>
+
+service timestamps log datetime msec localtime show-timezone
+
+! -------------------------------
+! 6) Interface security defaults (examples)
+! Access ports: enable Port Security and BPDU Guard
+interface range GigabitEthernet1/0/2 - 48
+ switchport mode access
+ switchport access vlan <access_vlan>
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security mac-address sticky
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+
+! Trunk example (uplink)
+interface GigabitEthernet1/0/1
+ description UPLINK-TO-DIST-CORE
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan 10,20,30
+
+! Shut down unused ports (example range)
+interface range GigabitEthernet1/0/49 - 52
+ shutdown
+
+! -------------------------------
+! 7) Spanning Tree & Layer2 hardening
+spanning-tree mode rapid-pvst
+spanning-tree portfast default
+spanning-tree portfast bpduguard default
+spanning-tree backbonefast
+
+! -------------------------------
+! 8) Errdisable recovery and other resiliency
+errdisable recovery cause bpduguard
+errdisable recovery cause psecure-violation
+errdisable recovery interval 300
+
+! -------------------------------
+! 9) Control-plane protection (basic)
+control-plane
+ service-policy input CONTROL_PLANE_POLICY
+
+! Note: Define CONTROL_PLANE_POLICY with class-maps and policers tailored to traffic.
+
+! -------------------------------
+! 10) Management ACLs and interface management
+! Example: Apply MGMT_ONLY ACL to management SVI
+interface Vlan<mgmt_vlan_id>
+ description Management SVI
+ ip address <mgmt_ip_address> <subnet_mask>
+ ip access-group MGMT_ONLY in
+ no shutdown
+
+! -------------------------------
+! 11) Secure logging of changes and verification helpers
+end
+write memory
+
+! Verification commands (run interactively)
+! show running-config
+! show ip interface brief
+! show logging
+! show users
+! show snmp user
+! show tacacs
+! show aaa users
+! show ip access-lists MGMT_ONLY
+! show port-security interface GigabitEthernet1/0/5
+
+! Notes & next steps:
+! - Replace <> placeholders with concrete values before applying.
+! - Define and attach a real CONTROL_PLANE_POLICY to the control plane.
+! - For production, centralize AAA (TACACS+/RADIUS), integrate with PAM/AD, and regularly audit configs.
+! - Consider adding CoPP, uRPF (where appropriate), and interface ACLs for extra hardening.
+
+
+! -------------------------------
+! STIG for Layer 2 IOS XE switches (DoD STIG mapping)
+! Replace <> placeholders. Review each item before deployment.
+
+! 1) Ensure AAA and authentication (STIG: AAA)
+configure terminal
+aaa new-model
+aaa authentication login default group tacacs+ local
+aaa authorization exec default group tacacs+ local
+aaa accounting exec default start-stop group tacacs+
+
+tacacs server TACACS1
+ address ipv4 <tacacs_server_ip> single-connection
+ key <tacacs_key>
+
+username <admin> privilege 15 secret <admin_password>
+enable secret <enable_secret>
+service password-encryption
+security passwords min-length 14
+password strength-check
+
+! 2) Session and login controls (STIG: session controls)
+login block-for 120 attempts 3 within 60
+aaa session-id common
+line con 0
+ exec-timeout 5 0
+ logging synchronous
+line vty 0 4
+ transport input ssh
+ login authentication default
+ exec-timeout 5 0
+ access-class MGMT_ONLY in
+
+! 3) Secure management plane and control plane protection (STIG: management/CoPP)
+ip access-list standard MGMT_ONLY
+ permit <management_subnet_or_host>
+ deny any
+
+crypto key generate rsa modulus 2048
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 2
+
+! Control Plane Policing (basic example)
+class-map match-any CP_CONTROL
+ match access-group name MGMT_ONLY
+policy-map CONTROL_PLANE_POLICY
+ class CP_CONTROL
+	police 8000 1500 exceed-action drop
+control-plane
+ service-policy input CONTROL_PLANE_POLICY
+
+! 4) SNMP and auditing (STIG: SNMP/Audit)
+no snmp-server community public
+no snmp-server community private
+snmp-server group NETOPS v3 priv
+snmp-server user <snmp_user> NETOPS v3 auth sha <auth_pass> priv aes 128 <priv_pass>
+snmp-server host <snmp_host> informs version 3 <snmp_user>
+
+! 5) NTP with authentication (STIG: time sync)
+ntp server <ntp_server_ip> key <ntp_key_id>
+ntp authenticate
+ntp trusted-key <ntp_key_id>
+
+! 6) Disable unused services (STIG: disable unused services)
+no ip http server
+no ip http secure-server
+no ip finger
+no service finger
+no ip bootp server
+no ip redirects
+no ip proxy-arp
+no ip source-route
+no cdp run
+no lldp run
+
+! 7) Management VLAN & SVI hardening (STIG: management VLAN)
+vlan <mgmt_vlan_id>
+ name MGMT
+interface Vlan<mgmt_vlan_id>
+ description Management SVI
+ ip address <mgmt_ip_address> <subnet_mask>
+ ip access-group MGMT_ONLY in
+ no shutdown
+
+! 8) Port security, BPDU, root and storm control (STIG: port security)
+! Enable on access ports
+interface range GigabitEthernet1/0/2 - 48
+ switchport mode access
+ switchport access vlan <user_vlan>
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security mac-address sticky
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ storm-control broadcast level 10.00 5.00
+ storm-control multicast level 10.00 5.00
+
+! Disable unused ports
+interface range GigabitEthernet1/0/49 - 52
+ shutdown
+
+! 9) VLAN and trunk hardening (STIG: VLAN separation)
+! Remove default VLANs from trunks, use allowed VLAN lists
+interface GigabitEthernet1/0/1
+ description UPLINK
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk native vlan 999
+ switchport trunk allowed vlan 10,20,30
+
+! 10) Spanning Tree best practices (STIG: STP settings)
+spanning-tree mode rapid-pvst
+spanning-tree extend system-id
+spanning-tree portfast default
+spanning-tree portfast bpduguard default
+spanning-tree backbonefast
+
+! 11) Errdisable and recovery (STIG: resiliency)
+errdisable recovery cause bpduguard
+errdisable recovery cause psecure-violation
+errdisable recovery cause inline-power
+errdisable recovery interval 300
+
+! 12) Logging and auditing (STIG: logging/auditing)
+service timestamps log datetime msec localtime show-timezone
+logging buffered 64000 debugging
+logging trap informational
+logging host <syslog_server_ip>
+archive
+ log config
+	logging enable
+	hidekeys
+	path flash:/archive/config
+	maxfiles 14
+
+! 13) System integrity settings (STIG: secure config)
+no ip http server
+no ip http secure-server
+file prompt quiet
+boot config-file flash:config.text
+
+! 14) Backup and save
+end
+write memory
+
+! Verification & checks (STIG-required checks)
+! show running-config | include aaa
+! show tacacs
+! show snmp user
+! show logging
+! show ntp associations
+! show ip access-lists MGMT_ONLY
+! show port-security all
+! show spanning-tree summary
+! show errdisable recovery
+
+! STIG notes:
+! - This file provides a comprehensive STIG-focused baseline. Adapt limits (port-security counts, storm-control thresholds, policing rates) to hardware and environment.
+! - For full STIG compliance, run automated STIG audit tools (e.g., SCAP/ACAS) and map controls to DoD STIG checks.
+! - Ensure keys/secrets are stored and handled per your organization's secrets management policy.
+
