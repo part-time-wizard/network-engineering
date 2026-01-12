@@ -42,6 +42,7 @@ ip ssh version 2
 ip ssh time-out 60
 ip ssh authentication-retries 2
 
+
 line vty 0 4
  login local
  transport input ssh
@@ -77,6 +78,26 @@ logging buffered 64000 debugging
 logging trap informational
 logging host <syslog_server_ip>
 ntp server <ntp_server_ip>
+! NTP authentication and access control
+! Replace <ntp_server1_ip>, <ntp_server2_ip>, and <ntp_auth_key> with real values
+ip access-list extended NTP_ONLY
+ permit udp host <ntp_server1_ip> any eq ntp
+ permit udp host <ntp_server2_ip> any eq ntp
+ deny ip any any
+
+ntp authentication-key 1 md5 <ntp_auth_key>
+ntp authenticate
+ntp trusted-key 1
+ntp server <ntp_server1_ip> key 1
+ntp server <ntp_server2_ip> key 1
+
+! Prevent other devices from using this switch as an NTP server
+! Allow only the two configured NTP servers to send NTP to the management SVI
+ip access-list extended NTP_TO_SWITCH
+ permit udp host <ntp_server1_ip> host <mgmt_ip_address> eq ntp
+ permit udp host <ntp_server2_ip> host <mgmt_ip_address> eq ntp
+ deny   udp any host <mgmt_ip_address> eq ntp
+ permit ip any any
 
 service timestamps log datetime msec localtime show-timezone
 
@@ -131,6 +152,7 @@ interface Vlan<mgmt_vlan_id>
  description Management SVI
  ip address <mgmt_ip_address> <subnet_mask>
  ip access-group MGMT_ONLY in
+ ip access-group NTP_TO_SWITCH in
  no shutdown
 
 ! -------------------------------
@@ -320,3 +342,58 @@ write memory
 ! - For full STIG compliance, run automated STIG audit tools (e.g., SCAP/ACAS) and map controls to DoD STIG checks.
 ! - Ensure keys/secrets are stored and handled per your organization's secrets management policy.
 
+! -------------------------------
+! 12) Cryptographic key-chains for HSRP and OSPF
+! Quarterly keys for 2026 (4 keys) plus an indefinite fallback key.
+! Each adjacent key overlaps by 10 minutes to allow smooth rollovers.
+! Adjust key-strings to meet your secrets policy before deploying.
+
+! HSRP keychain
+key chain HSRP_KEYS
+ key 1
+  key-string HSRP_Q1_2026@k1
+  accept-lifetime 00:00:00 Jan 1 2026 00:10:00 Apr 1 2026
+  send-lifetime   00:00:00 Jan 1 2026 00:10:00 Apr 1 2026
+ key 2
+  key-string HSRP_Q2_2026@k2
+  accept-lifetime 00:00:00 Apr 1 2026 00:10:00 Jul 1 2026
+  send-lifetime   00:00:00 Apr 1 2026 00:10:00 Jul 1 2026
+ key 3
+  key-string HSRP_Q3_2026@k3
+  accept-lifetime 00:00:00 Jul 1 2026 00:10:00 Oct 1 2026
+  send-lifetime   00:00:00 Jul 1 2026 00:10:00 Oct 1 2026
+ key 4
+  key-string HSRP_Q4_2026@k4
+  accept-lifetime 00:00:00 Oct 1 2026 00:10:00 Jan 1 2027
+  send-lifetime   00:00:00 Oct 1 2026 00:10:00 Jan 1 2027
+ key 5
+  key-string HSRP_indefinite_2027@k5
+  accept-lifetime 00:00:00 Jan 1 2027 infinite
+  send-lifetime   00:00:00 Jan 1 2027 infinite
+
+! OSPF keychain
+key chain OSPF_KEYS
+ key 1
+  key-string OSPF_Q1_2026@k1
+  accept-lifetime 00:00:00 Jan 1 2026 00:10:00 Apr 1 2026
+  send-lifetime   00:00:00 Jan 1 2026 00:10:00 Apr 1 2026
+ key 2
+  key-string OSPF_Q2_2026@k2
+  accept-lifetime 00:00:00 Apr 1 2026 00:10:00 Jul 1 2026
+  send-lifetime   00:00:00 Apr 1 2026 00:10:00 Jul 1 2026
+ key 3
+  key-string OSPF_Q3_2026@k3
+  accept-lifetime 00:00:00 Jul 1 2026 00:10:00 Oct 1 2026
+  send-lifetime   00:00:00 Jul 1 2026 00:10:00 Oct 1 2026
+ key 4
+  key-string OSPF_Q4_2026@k4
+  accept-lifetime 00:00:00 Oct 1 2026 00:10:00 Jan 1 2027
+  send-lifetime   00:00:00 Oct 1 2026 00:10:00 Jan 1 2027
+ key 5
+  key-string OSPF_indefinite_2027@k5
+  accept-lifetime 00:00:00 Jan 1 2027 infinite
+  send-lifetime   00:00:00 Jan 1 2027 infinite
+
+! To use:
+! - HSRP: standby <grp> authentication md5 key-chain HSRP_KEYS
+! - OSPF: ip ospf authentication key-chain OSPF_KEYS
